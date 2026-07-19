@@ -1,0 +1,45 @@
+---
+title: "Integrations"
+description: "The inbound forwarding email addresses a company registers so customers' quote requests reach Oblea."
+---
+
+An **integration** is an inbound forwarding email address a company registers so that its customers' quote-request emails reach Oblea. Point (or forward) mail at one of these addresses and Oblea reads it, classifies it, and turns it into a quotation.
+
+## How an address is created
+
+Each address is generated from a real email the sales team submits. From that source, Oblea derives a unique address of the form:
+
+```
+<local>-<domain>-<slug>@in.quotenow-app.com
+```
+
+where `<slug>` is a random 5-character string, so the same source email can be registered more than once without collision. The address is registered with `inbound.new`, which routes all of its mail to Oblea's webhook ([`POST /webhooks/receive_message`](/webhooks/receive-message)).
+
+## Storage and limits
+
+Addresses are backed by the `company_emails` table (see the [Data model](/concepts/data-model)). A company may register at most **5** forwarding addresses.
+
+Each row has the shape:
+
+```json
+{
+  "id": "string",
+  "company_id": "string",
+  "inbound_email": "string",
+  "created_at": "string"
+}
+```
+
+## Endpoints
+
+<CardGroup cols={3}>
+  <Card title="List addresses" icon="list" href="/integrations/list">
+    `GET` — all forwarding addresses for the caller's company.
+  </Card>
+  <Card title="Create address" icon="plus" href="/integrations/create">
+    `POST` — generate a new address and register it with `inbound.new`.
+  </Card>
+  <Card title="Delete address" icon="trash" href="/integrations/delete">
+    `DELETE` — remove a registered forwarding address.
+  </Card>
+</CardGroup>

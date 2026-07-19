@@ -1,0 +1,236 @@
+---
+title: "Store agent draft"
+description: "The agent hands the finished draft back to the backend, which inserts the client, line items and suggestions and flips the quotation to READY TO REVIEW."
+---
+
+<div className="text-sm font-mono">
+  <span className="font-semibold text-emerald-500">POST</span> `/quotations/{quotation_id}`
+</div>
+
+Fills a pre-created quotation with the draft the agent extracted from an inbound email. The backend already created the quotation row (status `PROCESSING`) when the message arrived; this call inserts the customer `client`, the line `items`, and their `suggested_items`, attaches the proposed reply, and flips the status to **`READY TO REVIEW`**. See [The quotation lifecycle](/concepts/quotation-lifecycle) for where this sits in the flow.
+
+<Warning>
+  This is an **internal machine-to-machine** endpoint, called only by `oblea-agent` to hand back a draft. It takes **no user authentication** today — it is currently unauthenticated. See [Authentication](/authentication).
+</Warning>
+
+## What it does
+
+<Steps>
+  <Step title="Insert and link the client">
+    A `client` row is created from the extracted info and linked via `quotation.client_id`. Because `client.name` is `NOT NULL`, the name falls back through `organization` → `email` → `"Unknown"`. If no client info was extracted at all, no client is created and `client_id` stays `null`.
+  </Step>
+  <Step title="Update the quotation">
+    The quotation's `name`, `notes`, and proposed reply (`quotation_send_message`) are updated in place.
+  </Step>
+  <Step title="Insert the line items">
+    The `items` are bulk-inserted as `quotation_items`, each keyed by its `number` (falling back to its array position when omitted).
+  </Step>
+  <Step title="Map and insert suggestions">
+    `suggested_items` — keyed by line `number` — are mapped to the ids of the inserted line rows and inserted. Any suggestion without an `item_id` is skipped.
+  </Step>
+  <Step title="Mark it ready">
+    The status is set to `READY TO REVIEW` and `updated_at` is bumped.
+  </Step>
+</Steps>
+
+## Path parameters
+
+<ParamField path="quotation_id" type="string" required>
+  The id of the pre-created `PROCESSING` quotation to fill.
+</ParamField>
+
+## Body
+
+<ParamField body="name" type="string">
+  The AI-generated title for the quotation.
+</ParamField>
+
+<ParamField body="notes" type="string">
+  Free-text notes to attach to the quotation.
+</ParamField>
+
+<ParamField body="client" type="object">
+  The customer extracted from the email. All fields are optional.
+
+  <Expandable title="client">
+    <ParamField body="name" type="string">Contact name.</ParamField>
+    <ParamField body="organization" type="string">The customer's company name.</ParamField>
+    <ParamField body="address" type="string">Client address.</ParamField>
+    <ParamField body="email" type="string">Client email.</ParamField>
+    <ParamField body="phone" type="string">Client phone.</ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="items" type="object[]">
+  The extracted line items.
+
+  <Expandable title="item">
+    <ParamField body="item_id" type="string | null">The matched catalog `items` id, or `null` if unmatched.</ParamField>
+    <ParamField body="quantity" type="integer | null">Quantity requested.</ParamField>
+    <ParamField body="sku" type="string">Product SKU.</ParamField>
+    <ParamField body="brand" type="string">Product brand.</ParamField>
+    <ParamField body="description" type="string">Product description.</ParamField>
+    <ParamField body="eta" type="integer | null">Lead time in days.</ParamField>
+    <ParamField body="price" type="number | null">Unit price.</ParamField>
+    <ParamField body="total" type="number | null">Line total.</ParamField>
+    <ParamField body="number" type="integer | null">1-based position of the line. Falls back to the array position if omitted.</ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="suggested_items" type="object">
+  A map keyed by the line item's `number` (as a string) → an array of alternative catalog matches for that line.
+
+  <Expandable title="suggested_items[number]">
+    <ParamField body="item_id" type="string" required>The catalog `items` id. Suggestions without an `item_id` are skipped.</ParamField>
+    <ParamField body="score" type="number">Match score.</ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="send_message" type="object">
+  The proposed reply to the customer.
+
+  <Expandable title="send_message">
+    <ParamField body="subject" type="string">Subject line of the reply.</ParamField>
+    <ParamField body="body" type="string">Body of the reply.</ParamField>
+  </Expandable>
+</ParamField>
+
+## Response
+
+<ResponseField name="quotation_id" type="string">
+  The id of the filled quotation.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Always `READY TO REVIEW` on success.
+</ResponseField>
+
+<ResponseField name="client_id" type="string | null">
+  The id of the newly created client, or `null` if no client info was provided.
+</ResponseField>
+
+<ResponseField name="items_inserted" type="integer">
+  How many `quotation_items` rows were inserted.
+</ResponseField>
+
+<ResponseField name="suggestions_inserted" type="integer">
+  How many `suggested_items` rows were inserted (after skipping those without an `item_id`).
+</ResponseField>
+
+## Errors
+
+<ResponseField name="404" type="Quotation not found: {id}">
+  No quotation exists with the given `quotation_id`.
+</ResponseField>
+
+<RequestExample>
+```bash cURL
+curl -X POST https://oblea-backend-prod-ye2cpok36a-uc.a.run.app/quotations/c92488d9-029e-4cf4-bd16-b9a6e93f982c \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Material eléctrico planta Guadalajara",
+    "notes": "Cliente solicita entrega en planta de Guadalajara.",
+    "client": {
+      "name": "Paola Gutiérrez",
+      "organization": "Flextronics Manufacturing",
+      "email": "paola.gutierrez@flextronics.com",
+      "phone": "33 8765 4321"
+    },
+    "items": [
+      {
+        "item_id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "number": 1,
+        "sku": "CBL-THWLS-10",
+        "brand": "Condumex",
+        "description": "Cable THW-LS calibre 10",
+        "eta": 3,
+        "price": 18.5,
+        "quantity": 20,
+        "total": 370.0
+      },
+      {
+        "item_id": "c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f",
+        "number": 2,
+        "sku": "CND-LB-34",
+        "brand": "Crouse-Hinds",
+        "description": "Condulet tipo LB 3/4",
+        "eta": 5,
+        "price": 42.0,
+        "quantity": 30,
+        "total": 1260.0
+      }
+    ],
+    "suggested_items": {
+      "1": [{ "item_id": "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e", "score": 0.72 }]
+    },
+    "send_message": {
+      "subject": "Cotización de material eléctrico",
+      "body": "Estimada Paola,\n\nGracias por su solicitud. Adjunto la cotización solicitada.\n\nSaludos cordiales."
+    }
+  }'
+```
+
+```javascript JavaScript
+const res = await fetch(
+  `${API_URL}/quotations/c92488d9-029e-4cf4-bd16-b9a6e93f982c`,
+  {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: "Material eléctrico planta Guadalajara",
+      notes: "Cliente solicita entrega en planta de Guadalajara.",
+      client: {
+        name: "Paola Gutiérrez",
+        organization: "Flextronics Manufacturing",
+        email: "paola.gutierrez@flextronics.com",
+        phone: "33 8765 4321",
+      },
+      items: [
+        {
+          item_id: "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+          number: 1,
+          sku: "CBL-THWLS-10",
+          brand: "Condumex",
+          description: "Cable THW-LS calibre 10",
+          eta: 3,
+          price: 18.5,
+          quantity: 20,
+          total: 370.0,
+        },
+        {
+          item_id: "c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f",
+          number: 2,
+          sku: "CND-LB-34",
+          brand: "Crouse-Hinds",
+          description: "Condulet tipo LB 3/4",
+          eta: 5,
+          price: 42.0,
+          quantity: 30,
+          total: 1260.0,
+        },
+      ],
+      suggested_items: {
+        "1": [{ item_id: "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e", score: 0.72 }],
+      },
+      send_message: {
+        subject: "Cotización de material eléctrico",
+        body: "Estimada Paola,\n\nGracias por su solicitud. Adjunto la cotización solicitada.\n\nSaludos cordiales.",
+      },
+    }),
+  }
+);
+const result = await res.json();
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200
+{
+  "quotation_id": "c92488d9-029e-4cf4-bd16-b9a6e93f982c",
+  "status": "READY TO REVIEW",
+  "client_id": "6bdc73f7-aa0d-49ee-8629-9724fe219fe5",
+  "items_inserted": 2,
+  "suggestions_inserted": 1
+}
+```
+</ResponseExample>

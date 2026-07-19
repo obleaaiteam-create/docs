@@ -1,0 +1,45 @@
+---
+title: "Quotations"
+description: "Oblea's core deliverable — the priced document a sales person reviews and sends."
+---
+
+Quotations are Oblea's core deliverable: the priced document a sales person reviews and sends to a customer. Most are born from an inbound email (see the [quotation lifecycle](/concepts/quotation-lifecycle)) — the webhook creates the row, the agent fills it, and a human approves it. Some are created by hand.
+
+## Statuses
+
+<CardGroup cols={3}>
+  <Card title="PROCESSING" icon="spinner">
+    Created when a candidate email arrives. The agent is still filling in the client, line items, and pricing.
+  </Card>
+  <Card title="READY TO REVIEW" icon="clipboard-check">
+    The agent has finished. The quotation is waiting on a human to review and approve it.
+  </Card>
+  <Card title="SENT" icon="paper-plane">
+    Approved and sent to the customer.
+  </Card>
+</CardGroup>
+
+<Note>Hand-created quotations default to `draft` instead — the email pipeline creates rows as `PROCESSING`.</Note>
+
+## Related tables
+
+A quotation ties together several tables in the [data model](/concepts/data-model): `quotation` (the editable header), `quotation_items` (the line rows), `suggested_items` (runner-up catalog matches), and `client` (the customer requesting the quote).
+
+## Endpoints
+
+<CardGroup cols={2}>
+  <Card title="List quotations" icon="list" href="/quotations/list">
+    `GET /quotations` — every quotation for your company, newest first.
+  </Card>
+  <Card title="Create quotation" icon="plus" href="/quotations/create">
+    `POST /quotations` — create a quotation by hand.
+  </Card>
+  <Card title="Get quotation" icon="file-invoice" href="/quotations/get">
+    `GET /quotations/{id}` — enriched detail for the editor.
+  </Card>
+  <Card title="Store agent draft" icon="robot" href="/quotations/store-agent-draft">
+    `POST /quotations/{id}` — internal; the agent fills a draft.
+  </Card>
+</CardGroup>
+
+<Note>`POST /quotations/{id}` is an **internal** endpoint called by `oblea-agent`, not the frontend. It fills a `PROCESSING` draft with the client, line items, and pricing the agent produced.</Note>

@@ -1,0 +1,38 @@
+---
+title: "Webhooks"
+description: "Machine-to-machine ingress — how external systems push events into Oblea."
+---
+
+Webhooks are how external systems push events **into** Oblea. Unlike the platform endpoints under `/integrations`, `/inbox`, and `/quotations` — which the frontend calls on behalf of a signed-in user — webhooks are machine-to-machine ingress: another system in the pipeline delivers an event, and Oblea reacts.
+
+## The one webhook today
+
+There is a single inbound webhook. It is called by `inbound.new` whenever an email arrives at one of a company's forwarding addresses.
+
+<CardGroup cols={1}>
+  <Card title="Receive message" icon="envelope" href="/webhooks/receive-message">
+    <div className="text-sm font-mono">
+      <span className="font-semibold text-emerald-500">POST</span> `/webhooks/receive_message`
+    </div>
+    The entry point of the whole pipeline. Matches the email to a company, classifies it, stores it, and — if it looks like a quote request — kicks off a quotation.
+  </Card>
+</CardGroup>
+
+<Warning>
+  Webhooks are **unauthenticated** today. They perform no token check and simply trust their caller — they are reachable only because `inbound.new` is configured with the service URL. See [Authentication](/authentication) for the full picture and the intended hardening path.
+</Warning>
+
+## What `receive_message` triggers
+
+When an email lands, the webhook runs a short pipeline:
+
+1. **Match** the recipient address against `company_emails` to resolve the owning company.
+2. **Classify** the message with OpenAI — is this a quote request?
+3. **Store** a `messages` row with the raw payload and the classifier's verdict.
+4. **Maybe create** a `quotation` (status `PROCESSING`) and **hand off** to `oblea-agent`, which fills the draft in the background.
+
+The full end-to-end journey — from the customer's email all the way to a `READY TO REVIEW` quotation a human approves — is traced in [The quotation lifecycle](/concepts/quotation-lifecycle). This webhook is steps 1 through 7 of it.
+
+## The other internal endpoint
+
+There is a second machine-to-machine endpoint in the pipeline, but it is not a webhook in this group: [`POST /quotations/{id}`](/quotations/store-agent-draft), where `oblea-agent` hands the filled draft back to the backend. It is documented under **Quotations**. Like `receive_message`, it is unauthenticated and trusts its caller.

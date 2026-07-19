@@ -1,0 +1,269 @@
+---
+title: "Receive message"
+description: "The entry point of the whole pipeline — inbound.new delivers an email, Oblea matches, classifies, stores, and maybe kicks off a quotation."
+---
+
+<div className="text-sm font-mono">
+  <span className="font-semibold text-emerald-500">POST</span> `/webhooks/receive_message`
+</div>
+
+The single entry point of the entire Oblea pipeline. `inbound.new` calls this whenever an email arrives at one of a company's forwarding addresses. In one request the backend matches the address to a company, classifies the message with AI, stores it, and — if it looks like a quote request — creates a `PROCESSING` quotation and hands it off to the agent.
+
+This is steps 1 through 7 of [the quotation lifecycle](/concepts/quotation-lifecycle).
+
+## Authorization
+
+**None.** This webhook is machine-to-machine and performs no authentication.
+
+<Warning>
+  This endpoint is **unauthenticated** today. It is called only by `inbound.new` and simply trusts its caller — there is no bearer token, no shared secret. It is reachable only because `inbound.new` is configured with the service URL. See [Authentication](/authentication) for the intended hardening path.
+</Warning>
+
+## The request cycle
+
+<Steps>
+  <Step title="Validate the body">
+    The request body must parse as JSON and be a JSON **object**, and it must look like a recognizable inbound email (a resolvable sender and recipient). Anything else returns `400`.
+  </Step>
+
+  <Step title="Extract sender and recipient">
+    Oblea reads the recipient (`to_address`) and the sender (`from_address`) out of the payload. The recipient is taken from `email.recipient` when present, falling back to the first entry in `email.to.addresses`.
+  </Step>
+
+  <Step title="Match the recipient to a company">
+    `to_address` is looked up in `company_emails` to resolve the owning **company**. No match → `404`, and **nothing is stored** — spam and mis-directed mail is dropped on the floor.
+  </Step>
+
+  <Step title="Classify with OpenAI">
+    The subject, body, and attachment metadata go to the model, which returns `{ is_quotation_candidate, confidence, reason }`. Classification **never blocks storage** — if it fails, the message is still saved and `triggered_quotation` is stored as `null`.
+  </Step>
+
+  <Step title="Store the message">
+    A `messages` row is inserted with the full `raw_payload`, the classifier verdict, and its metadata. This step is **idempotent** on `(channel, provider_message_id)`: a re-delivery of the same email returns `200` with `"duplicate": true` and does **not** create a second row.
+  </Step>
+
+  <Step title="Create a quotation (if it's a candidate)">
+    If the message is a quote request, a `quotation` row is created immediately with `status = PROCESSING`, linked back via `source_message_id`, and defaulted to the company's email as `sales_person`.
+  </Step>
+
+  <Step title="Hand off to the agent">
+    The backend calls `oblea-agent` at `POST /webhooks/generate_quotation`. The agent **acks instantly and does the heavy work in the background**, so `inbound.new` is never left waiting. This webhook returns `200` right away with `quotation_status: "PROCESSING"`.
+  </Step>
+</Steps>
+
+## Body
+
+`inbound.new` sends an `email.received` event. Oblea reads only the fields below.
+
+<ParamField body="event" type="string">
+  The event type, e.g. `"email.received"`.
+</ParamField>
+
+<ParamField body="email" type="object">
+  The parsed inbound email.
+
+  <Expandable title="email">
+    <ParamField body="id" type="string">
+      The provider's message id. Powers idempotency — a re-delivery carries the same `id`.
+    </ParamField>
+
+    <ParamField body="from" type="object">
+      The sender.
+
+      <Expandable title="from">
+        <ParamField body="addresses" type="array">
+          Array of `{ address }` objects. The first entry's `address` becomes `from_address`.
+        </ParamField>
+      </Expandable>
+    </ParamField>
+
+    <ParamField body="recipient" type="string">
+      The address that received the email. **Preferred** source for `to_address`.
+    </ParamField>
+
+    <ParamField body="to" type="object">
+      The recipients. Used as the **fallback** for `to_address` when `recipient` is absent.
+
+      <Expandable title="to">
+        <ParamField body="addresses" type="array">
+          Array of `{ address }` objects; the first entry's `address` is used.
+        </ParamField>
+      </Expandable>
+    </ParamField>
+
+    <ParamField body="subject" type="string | null">
+      The email subject.
+    </ParamField>
+
+    <ParamField body="parsedData" type="object">
+      Parsed header data.
+
+      <Expandable title="parsedData">
+        <ParamField body="date" type="string | null">
+          The email's own `Date` header.
+        </ParamField>
+      </Expandable>
+    </ParamField>
+
+    <ParamField body="cleanedContent" type="object">
+      The extracted message body and attachments.
+
+      <Expandable title="cleanedContent">
+        <ParamField body="text" type="string | null">
+          The plain-text body.
+        </ParamField>
+        <ParamField body="html" type="string | null">
+          The HTML body.
+        </ParamField>
+        <ParamField body="attachments" type="array">
+          Array of `{ filename, contentType, size, downloadUrl }` objects.
+        </ParamField>
+      </Expandable>
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<Note>
+  `inbound.new` sends many more fields than these. Oblea ignores the rest for processing but keeps the **entire** payload verbatim in `messages.raw_payload`, so nothing is ever lost.
+</Note>
+
+## Response
+
+The webhook always returns `200` once the message is stored. There are two shapes: one for a newly stored message, one for a re-delivery of a message already on file.
+
+<Tabs>
+  <Tab title="New message">
+    <ResponseField name="message" type="string">
+      Confirmation, e.g. `"Email saved at <timestamp>"`.
+    </ResponseField>
+    <ResponseField name="id" type="string">
+      The new `messages` row id.
+    </ResponseField>
+    <ResponseField name="provider_message_id" type="string">
+      The provider's message id (`email.id`).
+    </ResponseField>
+    <ResponseField name="triggered_quotation" type="boolean | null">
+      The classifier verdict — whether this looked like a quote request. `null` if classification failed.
+    </ResponseField>
+    <ResponseField name="quotation_id" type="string | null">
+      The id of the created `PROCESSING` quotation. `null` when the message is not a candidate.
+    </ResponseField>
+    <ResponseField name="quotation_status" type="string | null">
+      `"PROCESSING"` when a quotation was created, otherwise `null`.
+    </ResponseField>
+    <ResponseField name="from_address" type="string">
+      The resolved sender.
+    </ResponseField>
+    <ResponseField name="to_address" type="string">
+      The resolved recipient (the matched forwarding address).
+    </ResponseField>
+    <ResponseField name="subject" type="string | null">
+      The email subject.
+    </ResponseField>
+  </Tab>
+
+  <Tab title="Duplicate">
+    Returned when the same `provider_message_id` has already been stored. No second row is created and no quotation is triggered.
+
+    <ResponseField name="message" type="string">
+      e.g. `"Email already saved at <timestamp>"`.
+    </ResponseField>
+    <ResponseField name="id" type="string">
+      The id of the **existing** `messages` row.
+    </ResponseField>
+    <ResponseField name="duplicate" type="boolean">
+      Always `true` on this shape.
+    </ResponseField>
+    <ResponseField name="provider_message_id" type="string">
+      The provider's message id (`email.id`).
+    </ResponseField>
+    <ResponseField name="from_address" type="string">
+      The resolved sender.
+    </ResponseField>
+    <ResponseField name="to_address" type="string">
+      The resolved recipient.
+    </ResponseField>
+    <ResponseField name="subject" type="string | null">
+      The email subject.
+    </ResponseField>
+    <ResponseField name="triggered_quotation" type="boolean | null">
+      The classifier verdict recorded when the message was first stored.
+    </ResponseField>
+  </Tab>
+</Tabs>
+
+## Errors
+
+<ResponseField name="400" type="Body must be valid JSON">
+  The request body did not parse as JSON.
+</ResponseField>
+
+<ResponseField name="400" type="Body must be a JSON object">
+  The body parsed but was not a JSON object (e.g. an array or a scalar).
+</ResponseField>
+
+<ResponseField name="400" type="Not a recognizable inbound email payload">
+  The body is a JSON object but does not look like an inbound email.
+</ResponseField>
+
+<ResponseField name="400" type="Payload missing sender or recipient">
+  A sender or recipient address could not be extracted from the payload.
+</ResponseField>
+
+<ResponseField name="404" type="Email address not found">
+  No company is registered for the recipient address — `no company is registered for {address}`. Nothing is stored.
+</ResponseField>
+
+<RequestExample>
+```json email.received
+{
+  "event": "email.received",
+  "email": {
+    "id": "wAxlN7czGF125Oz26ECIY",
+    "from": {
+      "addresses": [
+        { "address": "compras@ferreteriamendoza.mx" }
+      ]
+    },
+    "recipient": "ventas-empresa-a1b2c@in.quotenow-app.com",
+    "to": {
+      "addresses": [
+        { "address": "ventas-empresa-a1b2c@in.quotenow-app.com" }
+      ]
+    },
+    "subject": "Solicitud de cotización - Material eléctrico",
+    "parsedData": {
+      "date": "2026-07-18T16:42:11.000Z"
+    },
+    "cleanedContent": {
+      "text": "Buenas tardes, necesito cotización para 200 metros de cable THW calibre 12 y 15 cajas de registro. Adjunto la lista completa de material. Quedo atento. Saludos, Juan Pérez.",
+      "html": null,
+      "attachments": [
+        {
+          "filename": "lista_material.pdf",
+          "contentType": "application/pdf",
+          "size": 48213,
+          "downloadUrl": "https://api.inbound.new/attachments/wAxlN7czGF125Oz26ECIY/lista_material.pdf"
+        }
+      ]
+    }
+  }
+}
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200
+{
+  "message": "Email saved at 2026-07-18T16:42:13.918204+00:00",
+  "id": "3f0b1c74-8a2e-4c19-9d5b-7e1a2f6c4d8e",
+  "provider_message_id": "wAxlN7czGF125Oz26ECIY",
+  "triggered_quotation": true,
+  "quotation_id": "c92488d9-029e-4cf4-bd16-b9a6e93f982c",
+  "quotation_status": "PROCESSING",
+  "from_address": "compras@ferreteriamendoza.mx",
+  "to_address": "ventas-empresa-a1b2c@in.quotenow-app.com",
+  "subject": "Solicitud de cotización - Material eléctrico"
+}
+```
+</ResponseExample>

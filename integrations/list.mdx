@@ -1,0 +1,83 @@
+---
+title: "List addresses"
+description: "Return every inbound forwarding address registered for the signed-in user's company."
+---
+
+<div className="text-sm font-mono">
+  <span className="font-semibold text-blue-500">GET</span> `/integrations`
+</div>
+
+Returns all inbound forwarding addresses for the signed-in user's company, newest first.
+
+## Authorization
+
+Requires a platform JWT. See [Authentication](/authentication).
+
+```
+Authorization: Bearer <supabase-access-token>
+```
+
+## Response
+
+Returns an **array** of `company_emails` rows, ordered by creation time with the newest first.
+
+<ResponseField name="[].id" type="string">
+  The address's unique id.
+</ResponseField>
+
+<ResponseField name="[].company_id" type="string">
+  The company that owns the address.
+</ResponseField>
+
+<ResponseField name="[].inbound_email" type="string">
+  The generated `@in.quotenow-app.com` forwarding address.
+</ResponseField>
+
+<ResponseField name="[].created_at" type="string">
+  ISO 8601 creation timestamp.
+</ResponseField>
+
+## Errors
+
+<ResponseField name="401" type="Invalid or expired token">
+  The JWT is missing, malformed, or expired.
+</ResponseField>
+
+<ResponseField name="404" type="No company linked to this user">
+  The authenticated user has no company.
+</ResponseField>
+
+<RequestExample>
+```bash cURL
+curl https://oblea-backend-prod-ye2cpok36a-uc.a.run.app/integrations \
+  -H "Authorization: Bearer <supabase-access-token>"
+```
+
+```javascript JavaScript
+const res = await fetch(`${API_URL}/integrations`, {
+  headers: {
+    Authorization: `Bearer ${token}`,
+  },
+});
+const addresses = await res.json();
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200
+[
+  {
+    "id": "782494fe-de6e-4673-880a-61b1eff66f89",
+    "company_id": "9dc053d9-b1b5-4c0c-ab05-9b3c882a198d",
+    "inbound_email": "ventas-empresa-a1b2c@in.quotenow-app.com",
+    "created_at": "2026-07-18T18:50:36.827598+00:00"
+  },
+  {
+    "id": "1c4b9f02-7e2a-4d5c-9f83-2a6e0b1d4477",
+    "company_id": "9dc053d9-b1b5-4c0c-ab05-9b3c882a198d",
+    "inbound_email": "cotizaciones-empresa-x9k2p@in.quotenow-app.com",
+    "created_at": "2026-07-12T09:14:02.113004+00:00"
+  }
+]
+```
+</ResponseExample>

@@ -1,0 +1,64 @@
+---
+title: "Authentication"
+description: "Platform requests carry a Supabase JWT; internal webhooks are machine-to-machine."
+---
+
+The API has two authentication modes, one per audience.
+
+## Platform requests (Supabase JWT)
+
+Every endpoint under `/integrations`, `/inbox`, and the read/write `/quotations` routes is called by the frontend on behalf of a signed-in user. The frontend obtains a JWT from Supabase Auth and sends it as a bearer token:
+
+```bash
+curl https://oblea-backend-prod-ye2cpok36a-uc.a.run.app/quotations \
+  -H "Authorization: Bearer <supabase-access-token>"
+```
+
+The backend validates the token against Supabase Auth and then resolves the **one company** that user owns:
+
+<Steps>
+  <Step title="Verify the token">
+    The `Authorization: Bearer` token is validated against Supabase Auth. An invalid or expired token returns `401 Unauthorized`.
+  </Step>
+  <Step title="Resolve the company">
+    The authenticated user id is looked up in the `company` table (`company.user_id`). If no company is linked, the request returns `404 Not Found` with `No company linked to this user`.
+  </Step>
+  <Step title="Scope the query">
+    Every read and write is filtered by that `company_id`. The company is **never** taken from the request body, so a user can only ever touch their own organization's data.
+  </Step>
+</Steps>
+
+<Note>
+  A company is provisioned automatically the first time a user confirms their account (a Postgres trigger inserts a `company` row seeded from their email). So any confirmed user already owns exactly one company.
+</Note>
+
+### Missing or invalid token
+
+<ResponseField name="401 Unauthorized" type="Invalid or expired token">
+  Returned when the bearer token is missing, malformed, or rejected by Supabase Auth.
+</ResponseField>
+
+```json
+{
+  "detail": "Invalid or expired token"
+}
+```
+
+## Internal requests (machine-to-machine)
+
+Two endpoints are **not** called by users — they are called by other systems in the pipeline:
+
+| Endpoint | Caller | Auth today |
+| --- | --- | --- |
+| `POST /webhooks/receive_message` | `inbound.new` email webhook | None |
+| `POST /quotations/{quotation_id}` | `oblea-agent` handing back a filled draft | None |
+
+These endpoints currently trust their caller and perform **no** authentication. They are reachable only because both callers are configured with the service URL.
+
+<Warning>
+  These internal endpoints are unauthenticated today. Do not expose the service URL publicly beyond what `inbound.new` and `oblea-agent` need, and treat adding a shared secret (e.g. an `X-API-Key` header or `inbound.new`'s verification token) as the next hardening step.
+</Warning>
+
+## How the backend reaches the database
+
+The backend talks to Postgres exclusively through Supabase's REST API using the **service-role key**, which bypasses Row-Level Security. That is correct here because this backend *is* the trusted server: RLS exists to lock out the public/anon key, not this service. The service-role key lives only in the backend's environment and is never exposed to the browser.

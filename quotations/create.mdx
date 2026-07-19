@@ -1,0 +1,183 @@
+---
+title: "Create quotation"
+description: "Create a quotation by hand, outside the inbound email pipeline."
+---
+
+<div className="text-sm font-mono">
+  <span className="font-semibold text-emerald-500">POST</span> `/quotations`
+</div>
+
+Creates a quotation **by hand** — not through the inbound email pipeline. Every field is optional; `company_id` is resolved from the authenticated user and never taken from the body. Only the fields you provide are set — the rest fall back to database defaults (`date` → today, `iva_rate` → `0.16`, `status` → `draft`).
+
+## Authorization
+
+Requires a platform JWT. See [Authentication](/authentication).
+
+```
+Authorization: Bearer <supabase-access-token>
+```
+
+<Note>This hand-creation path skips the agent entirely and defaults `status` to `draft`. The email pipeline instead creates rows as `PROCESSING` and lets the agent fill them.</Note>
+
+## Body
+
+Every field is optional.
+
+<ParamField body="client_id" type="string">
+  The customer the quotation is for (→ `client`).
+</ParamField>
+
+<ParamField body="quotation_number" type="string">
+  Human-facing quotation number. Unique when set.
+</ParamField>
+
+<ParamField body="sales_person" type="string">
+  The sales person on the quotation.
+</ParamField>
+
+<ParamField body="date" type="string">
+  Issue date (`YYYY-MM-DD`). Defaults to today.
+</ParamField>
+
+<ParamField body="validity" type="string">
+  Date the quotation is valid until (`YYYY-MM-DD`).
+</ParamField>
+
+<ParamField body="iva_rate" type="number">
+  Tax rate, e.g. `0.16`. Defaults to `0.16`.
+</ParamField>
+
+<ParamField body="status" type="string">
+  Quotation status. Defaults to `draft`.
+</ParamField>
+
+<ParamField body="notes" type="string">
+  Free-text notes.
+</ParamField>
+
+<ParamField body="name" type="string">
+  Short title for the quotation.
+</ParamField>
+
+## Response
+
+Returns the inserted `quotation` row.
+
+<ResponseField name="id" type="string">
+  The quotation's unique id.
+</ResponseField>
+
+<ResponseField name="company_id" type="string">
+  The company that owns the quotation, resolved from the authenticated user.
+</ResponseField>
+
+<ResponseField name="client_id" type="string | null">
+  The customer the quotation is for (→ `client`).
+</ResponseField>
+
+<ResponseField name="quotation_number" type="string | null">
+  Human-facing quotation number.
+</ResponseField>
+
+<ResponseField name="sales_person" type="string | null">
+  The sales person on the quotation.
+</ResponseField>
+
+<ResponseField name="date" type="string | null">
+  Issue date (`YYYY-MM-DD`).
+</ResponseField>
+
+<ResponseField name="validity" type="string | null">
+  Date the quotation is valid until (`YYYY-MM-DD`).
+</ResponseField>
+
+<ResponseField name="iva_rate" type="number">
+  Tax rate snapshot, e.g. `0.16`.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  `PROCESSING` · `READY TO REVIEW` · `SENT` (`draft` for hand-created).
+</ResponseField>
+
+<ResponseField name="notes" type="string | null">
+  Free-text notes.
+</ResponseField>
+
+<ResponseField name="name" type="string | null">
+  Short title for the quotation.
+</ResponseField>
+
+<ResponseField name="quotation_send_message" type="object | null">
+  The proposed reply to the customer: `{ subject, body }`.
+</ResponseField>
+
+<ResponseField name="source_message_id" type="string | null">
+  The email that triggered the quotation (→ `messages`). Null for hand-created quotations.
+</ResponseField>
+
+<ResponseField name="created_at" type="string">
+  ISO 8601 creation timestamp.
+</ResponseField>
+
+<ResponseField name="updated_at" type="string">
+  ISO 8601 timestamp of the last update.
+</ResponseField>
+
+## Errors
+
+<ResponseField name="401" type="Invalid or expired token">
+  The JWT is missing, malformed, or expired.
+</ResponseField>
+
+<ResponseField name="404" type="No company linked to this user">
+  The authenticated user has no company.
+</ResponseField>
+
+<RequestExample>
+```bash cURL
+curl -X POST https://oblea-backend-prod-ye2cpok36a-uc.a.run.app/quotations \
+  -H "Authorization: Bearer <supabase-access-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Cotización manual",
+    "notes": "Cotización capturada a mano por el equipo de ventas."
+  }'
+```
+
+```javascript JavaScript
+const res = await fetch(`${API_URL}/quotations`, {
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    name: "Cotización manual",
+    notes: "Cotización capturada a mano por el equipo de ventas.",
+  }),
+});
+const quotation = await res.json();
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200
+{
+  "id": "e91b7d34-6c0a-4f52-b18e-2d7a9c4f1e60",
+  "company_id": "9dc053d9-b1b5-4c0c-ab05-9b3c882a198d",
+  "client_id": null,
+  "quotation_number": null,
+  "sales_person": null,
+  "date": "2026-07-19",
+  "validity": null,
+  "iva_rate": 0.16,
+  "status": "draft",
+  "notes": "Cotización capturada a mano por el equipo de ventas.",
+  "name": "Cotización manual",
+  "quotation_send_message": null,
+  "source_message_id": null,
+  "created_at": "2026-07-19T15:02:47.913204+00:00",
+  "updated_at": "2026-07-19T15:02:47.913204+00:00"
+}
+```
+</ResponseExample>

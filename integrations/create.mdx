@@ -1,0 +1,108 @@
+---
+title: "Create address"
+description: "Generate a new inbound forwarding address and register it with inbound.new."
+---
+
+<div className="text-sm font-mono">
+  <span className="font-semibold text-emerald-500">POST</span> `/integrations`
+</div>
+
+Creates a new inbound forwarding address for the signed-in user's company and registers it with `inbound.new` so it can start receiving mail. You submit the real email the sales team uses; Oblea derives a unique `@in.quotenow-app.com` address from it.
+
+## Authorization
+
+Requires a platform JWT. See [Authentication](/authentication).
+
+```
+Authorization: Bearer <supabase-access-token>
+```
+
+## How the address is generated
+
+From a submitted email like `ventas@empresa.mx`, Oblea builds:
+
+```
+ventas-empresa-<slug>@in.quotenow-app.com
+```
+
+where `<slug>` is a random 5-character string, so the same source email can be registered more than once without collision. The address is registered with `inbound.new` (routing all its mail to Oblea's webhook) **before** it is saved — if `inbound.new` rejects it, nothing is stored.
+
+<Note>A company may register at most **5** forwarding addresses. The 6th request returns `400`.</Note>
+
+## Body
+
+<ParamField body="email" type="string" required>
+  The real email address the customer-facing team uses (must contain an `@`). Only its local part and domain name are used to build the forwarding address; the original is not stored.
+</ParamField>
+
+## Response
+
+Returns the created `company_emails` row.
+
+<ResponseField name="id" type="string">
+  The new address's unique id.
+</ResponseField>
+
+<ResponseField name="company_id" type="string">
+  The company that owns it.
+</ResponseField>
+
+<ResponseField name="inbound_email" type="string">
+  The generated `@in.quotenow-app.com` forwarding address. This is where the customer's mail must be forwarded.
+</ResponseField>
+
+<ResponseField name="created_at" type="string">
+  ISO 8601 creation timestamp.
+</ResponseField>
+
+## Errors
+
+<ResponseField name="400" type="A valid email is required">
+  The `email` field is missing or has no `@`.
+</ResponseField>
+
+<ResponseField name="400" type="Only 5 emails allowed per company">
+  The company already has 5 forwarding addresses.
+</ResponseField>
+
+<ResponseField name="404" type="No company linked to this user">
+  The authenticated user has no company.
+</ResponseField>
+
+<ResponseField name="502" type="Inbound API error">
+  Registering the address with `inbound.new` failed; the detail carries their error text.
+</ResponseField>
+
+<RequestExample>
+```bash cURL
+curl -X POST https://oblea-backend-prod-ye2cpok36a-uc.a.run.app/integrations \
+  -H "Authorization: Bearer <supabase-access-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "ventas@empresa.mx"
+  }'
+```
+
+```javascript JavaScript
+const res = await fetch(`${API_URL}/integrations`, {
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({ email: "ventas@empresa.mx" }),
+});
+const address = await res.json();
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200
+{
+  "id": "782494fe-de6e-4673-880a-61b1eff66f89",
+  "company_id": "9dc053d9-b1b5-4c0c-ab05-9b3c882a198d",
+  "inbound_email": "ventas-empresa-a1b2c@in.quotenow-app.com",
+  "created_at": "2026-07-18T18:50:36.827598+00:00"
+}
+```
+</ResponseExample>

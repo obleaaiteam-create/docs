@@ -1,0 +1,73 @@
+---
+title: "Delete address"
+description: "Remove a registered inbound forwarding address from the caller's company."
+---
+
+<div className="text-sm font-mono">
+  <span className="font-semibold text-rose-500">DELETE</span> `/integrations/{email_id}`
+</div>
+
+Removes a registered forwarding address, scoped to the caller's company.
+
+## Authorization
+
+Requires a platform JWT. See [Authentication](/authentication).
+
+```
+Authorization: Bearer <supabase-access-token>
+```
+
+## Path parameters
+
+<ParamField path="email_id" type="string" required>
+  The `company_emails` row id of the address to remove.
+</ParamField>
+
+<Warning>
+  This removes only the database row — it does **not** delete the address on `inbound.new`'s side. Mail sent to that address may still be received, and is then dropped as an unknown address by the webhook. This is a known limitation.
+</Warning>
+
+## Response
+
+<ResponseField name="deleted" type="string">
+  The id of the removed address.
+</ResponseField>
+
+## Errors
+
+<ResponseField name="401" type="Invalid or expired token">
+  The JWT is missing, malformed, or expired.
+</ResponseField>
+
+<ResponseField name="404" type="Email not found">
+  No address with that id exists, or it isn't owned by the caller's company.
+</ResponseField>
+
+<ResponseField name="404" type="No company linked to this user">
+  The authenticated user has no company.
+</ResponseField>
+
+<RequestExample>
+```bash cURL
+curl -X DELETE https://oblea-backend-prod-ye2cpok36a-uc.a.run.app/integrations/782494fe-de6e-4673-880a-61b1eff66f89 \
+  -H "Authorization: Bearer <supabase-access-token>"
+```
+
+```javascript JavaScript
+const res = await fetch(`${API_URL}/integrations/${emailId}`, {
+  method: "DELETE",
+  headers: {
+    Authorization: `Bearer ${token}`,
+  },
+});
+const result = await res.json();
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200
+{
+  "deleted": "782494fe-de6e-4673-880a-61b1eff66f89"
+}
+```
+</ResponseExample>

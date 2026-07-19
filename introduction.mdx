@@ -1,0 +1,75 @@
+---
+title: "Oblea API"
+sidebarTitle: "Introduction"
+description: "The REST API behind Oblea — the AI layer that turns an inbound quote request into a ready-to-review quotation."
+---
+
+Oblea is a B2B platform that becomes a company's **AI layer**, starting with automatic quote generation. A customer sends a quote request to a company's sales inbox; Oblea reads it, classifies it, extracts the products, matches them against the company's catalog, and produces a quotation the sales person only has to review — not build from scratch.
+
+This is the reference for **`oblea-backend`**, the FastAPI service that is the source of truth for all data (companies, catalogs, customers, messages and quotations) and the only service that writes to the database.
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="key" href="/authentication">
+    How platform requests are authenticated with a Supabase JWT, and which endpoints are internal-only.
+  </Card>
+  <Card title="Quotation lifecycle" icon="arrows-spin" href="/concepts/quotation-lifecycle">
+    Follow one email from `inbound.new` all the way to a `READY TO REVIEW` quotation.
+  </Card>
+  <Card title="Data model" icon="table" href="/concepts/data-model">
+    The eight tables and how `company`, `messages`, `quotation` and friends relate.
+  </Card>
+  <Card title="Errors" icon="triangle-exclamation" href="/errors">
+    The status codes the API returns and what each one means.
+  </Card>
+</CardGroup>
+
+## Base URL
+
+All endpoints are served from a single Cloud Run service.
+
+<CodeGroup>
+```bash Production
+https://oblea-backend-prod-ye2cpok36a-uc.a.run.app
+```
+
+```bash Local
+http://localhost:8000
+```
+</CodeGroup>
+
+## The three services
+
+`oblea-backend` never works alone. It sits between the frontend the sales team uses, the `inbound.new` email infrastructure, and the stateless AI agent.
+
+<CardGroup cols={3}>
+  <Card title="oblea-frontend" icon="window">
+    Next.js platform. Reads and writes through this API with the signed-in user's **Supabase JWT**.
+  </Card>
+  <Card title="oblea-backend" icon="server">
+    This service. FastAPI + Supabase (Postgres). Owns every write to the database.
+  </Card>
+  <Card title="oblea-agent" icon="robot">
+    Stateless LangGraph agent. Extracts and matches items, then hands the finished draft **back** to this API.
+  </Card>
+</CardGroup>
+
+## Two kinds of endpoints
+
+The API has two audiences, and they authenticate differently.
+
+<CardGroup cols={2}>
+  <Card title="Platform endpoints" icon="user-lock">
+    Called by the frontend on behalf of a signed-in user. Require an `Authorization: Bearer <supabase-jwt>` header and resolve to the one company that user owns.
+
+    `/integrations` · `/inbox` · `/quotations`
+  </Card>
+  <Card title="Internal endpoints" icon="right-left">
+    Called machine-to-machine by `inbound.new` and `oblea-agent`. **No user auth today** — they trust the caller.
+
+    `POST /webhooks/receive_message` · `POST /quotations/{id}`
+  </Card>
+</CardGroup>
+
+<Note>
+  Every platform endpoint is scoped to a single company. The company is resolved from the authenticated user (`company.user_id`), never taken from the request body — so one user can only ever read or write their own organization's data.
+</Note>

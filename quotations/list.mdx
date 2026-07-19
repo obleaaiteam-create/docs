@@ -1,0 +1,137 @@
+---
+title: "List quotations"
+description: "Return all quotations for the signed-in user's company, newest first."
+---
+
+<div className="text-sm font-mono">
+  <span className="font-semibold text-blue-500">GET</span> `/quotations`
+</div>
+
+Returns all quotations for the signed-in user's company, newest first.
+
+## Authorization
+
+Requires a platform JWT. See [Authentication](/authentication).
+
+```
+Authorization: Bearer <supabase-access-token>
+```
+
+This endpoint takes no query parameters and no request body.
+
+## Response
+
+Returns an array of `quotation` rows, newest first.
+
+<ResponseField name="[].id" type="string">
+  The quotation's unique id.
+</ResponseField>
+
+<ResponseField name="[].company_id" type="string">
+  The company that owns the quotation.
+</ResponseField>
+
+<ResponseField name="[].client_id" type="string | null">
+  The customer the quotation is for (→ `client`). Null until the agent fills it.
+</ResponseField>
+
+<ResponseField name="[].quotation_number" type="string | null">
+  Human-facing quotation number. Unique when set.
+</ResponseField>
+
+<ResponseField name="[].sales_person" type="string | null">
+  The sales person on the quotation.
+</ResponseField>
+
+<ResponseField name="[].date" type="string | null">
+  Issue date (`YYYY-MM-DD`).
+</ResponseField>
+
+<ResponseField name="[].validity" type="string | null">
+  Date the quotation is valid until (`YYYY-MM-DD`).
+</ResponseField>
+
+<ResponseField name="[].iva_rate" type="number">
+  Tax rate snapshot, e.g. `0.16`.
+</ResponseField>
+
+<ResponseField name="[].status" type="string">
+  `PROCESSING` · `READY TO REVIEW` · `SENT` (`draft` for hand-created).
+</ResponseField>
+
+<ResponseField name="[].notes" type="string | null">
+  Free-text notes.
+</ResponseField>
+
+<ResponseField name="[].name" type="string | null">
+  Short AI-generated title.
+</ResponseField>
+
+<ResponseField name="[].quotation_send_message" type="object | null">
+  The proposed reply to the customer: `{ subject, body }`.
+</ResponseField>
+
+<ResponseField name="[].source_message_id" type="string | null">
+  The email that triggered the quotation (→ `messages`). Null for hand-created quotations.
+</ResponseField>
+
+<ResponseField name="[].created_at" type="string">
+  ISO 8601 creation timestamp.
+</ResponseField>
+
+<ResponseField name="[].updated_at" type="string">
+  ISO 8601 timestamp of the last update.
+</ResponseField>
+
+## Errors
+
+<ResponseField name="401" type="Invalid or expired token">
+  The JWT is missing, malformed, or expired.
+</ResponseField>
+
+<ResponseField name="404" type="No company linked to this user">
+  The authenticated user has no company.
+</ResponseField>
+
+<RequestExample>
+```bash cURL
+curl https://oblea-backend-prod-ye2cpok36a-uc.a.run.app/quotations \
+  -H "Authorization: Bearer <supabase-access-token>"
+```
+
+```javascript JavaScript
+const res = await fetch(`${API_URL}/quotations`, {
+  headers: {
+    Authorization: `Bearer ${token}`,
+  },
+});
+const quotations = await res.json();
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200
+[
+  {
+    "id": "b7e4c1a9-3f26-4d80-9c15-2a8f7e6b0d34",
+    "company_id": "9dc053d9-b1b5-4c0c-ab05-9b3c882a198d",
+    "client_id": "5c2a1f88-9b03-4e71-8d6a-1f0c7b3e9a52",
+    "quotation_number": "COT-2026-0142",
+    "sales_person": "Laura Jiménez",
+    "date": "2026-07-18",
+    "validity": "2026-08-01",
+    "iva_rate": 0.16,
+    "status": "READY TO REVIEW",
+    "notes": "Cliente solicita entrega en planta Guadalajara.",
+    "name": "Material eléctrico planta Guadalajara",
+    "quotation_send_message": {
+      "subject": "Cotización - Material eléctrico",
+      "body": "Estimado cliente, adjunto la cotización solicitada..."
+    },
+    "source_message_id": "3f1c9e2a-7b44-4d1e-9a2f-8c0b1d5e6f70",
+    "created_at": "2026-07-18T17:44:02.118764+00:00",
+    "updated_at": "2026-07-18T17:46:19.552031+00:00"
+  }
+]
+```
+</ResponseExample>

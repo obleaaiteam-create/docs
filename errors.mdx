@@ -1,0 +1,53 @@
+---
+title: "Errors"
+description: "The status codes the API returns and what triggers each one."
+---
+
+The API uses conventional HTTP status codes. Errors are returned as JSON with a `detail` field describing what went wrong.
+
+```json
+{
+  "detail": "No company linked to this user"
+}
+```
+
+## Status codes
+
+<ResponseField name="200 OK" type="success">
+  The request succeeded. All successful reads and writes return `200` (there is no `201`).
+</ResponseField>
+
+<ResponseField name="400 Bad Request" type="client error">
+  The request body is malformed or fails a validation rule. Seen when: a webhook body is not valid JSON or not a JSON object, an inbound payload is not a recognizable email, a required `email` is missing or has no `@`, or a company already has the maximum of 5 forwarding addresses.
+</ResponseField>
+
+<ResponseField name="401 Unauthorized" type="client error">
+  The `Authorization: Bearer` token is missing, malformed, or rejected by Supabase Auth. Only applies to platform endpoints. Detail: `Invalid or expired token`.
+</ResponseField>
+
+<ResponseField name="404 Not Found" type="client error">
+  The requested resource does not exist or does not belong to the caller's company. Seen when: the user has no linked company, a quotation or forwarding address id is unknown, or a webhook targets an email address no company has registered.
+</ResponseField>
+
+<ResponseField name="502 Bad Gateway" type="server error">
+  An upstream call failed. Currently returned when registering a new forwarding address with `inbound.new` fails; the `detail` includes `inbound.new`'s error text.
+</ResponseField>
+
+## Where each error comes from
+
+| Situation | Status | `detail` |
+| --- | --- | --- |
+| Missing / invalid JWT | `401` | `Invalid or expired token` |
+| User has no company | `404` | `No company linked to this user` |
+| Forwarding address not found (on delete) | `404` | `Email not found` |
+| Invalid `email` in body | `400` | `A valid email is required` |
+| 6th forwarding address | `400` | `Only 5 emails allowed per company` |
+| `inbound.new` registration failed | `502` | `Inbound API error: ...` |
+| Unknown quotation id | `404` | `Quotation not found: {id}` |
+| Webhook body not JSON | `400` | `Body must be valid JSON` |
+| Webhook payload not an email | `400` | `Not a recognizable inbound email payload` |
+| Webhook to an unregistered address | `404` | `Email address not found: no company is registered for {address}` |
+
+<Note>
+  The inbound webhook is **idempotent**. Re-delivering a message that was already stored is not an error — the API returns `200` with `"duplicate": true` instead of creating a second row.
+</Note>
